@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.5.57">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Conditional inference tree</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="04-08_cit_partial_files/libs/clipboard/clipboard.min.js"></script>
+<script src="04-08_cit_partial_files/libs/quarto-html/quarto.js"></script>
+<script src="04-08_cit_partial_files/libs/quarto-html/popper.min.js"></script>
+<script src="04-08_cit_partial_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="04-08_cit_partial_files/libs/quarto-html/anchor.min.js"></script>
+<link href="04-08_cit_partial_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="04-08_cit_partial_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="04-08_cit_partial_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="04-08_cit_partial_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="04-08_cit_partial_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Conditional inference tree</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="learning-objectives" class="level1">
+<h1>Learning objectives</h1>
+<p>Our learning objectives are to:<br>
+- Understand conditional inference tree (cit) algorithm - Use the ML framework to:<br>
+- pre-process data - train a cit model - evaluate model predictability - Explore a few new concepts:<br>
+- Iterative search with <strong>simulated annealing</strong><br>
+- Selecting <strong>best model within 1 sd</strong></p>
+</section>
+<section id="introduction" class="level1">
+<h1>Introduction</h1>
+<p>As we previously learned, linear regression models can suffer from <strong>multicollinearity</strong> when two or more predictor variables are highly correlated.</p>
+<p>The methods we mentioned to overcome multicollinearity include:<br>
+- Dimensionality reduction (e.g., PCA)<br>
+- Variable selection: - by hand - by models</p>
+<p>Today, we’ll explore another model that performs variable selection, but in a different way: <strong>conditional inference trees (CIT)</strong>.</p>
+<section id="cit" class="level2">
+<h2 class="anchored" data-anchor-id="cit">CIT</h2>
+<p>Conditional inference tree is a recursive model that works iteratively performing 2 steps:<br>
+- <strong>variable selection</strong><br>
+- <strong>binary split</strong></p>
+<p>It performs <strong>variable selection</strong> by first running all possible bivariate models between the response variable (e.g., strength_gtex) and each individual explanatory variable (e.g., sum_precip.mm_June), in the form of <strong>strength_gtex ~ sum_precip.mm_June</strong>. Then, it selects the explanatory variable with the <strong>lowest p-value</strong> as the most important.</p>
+<p>After it selects the most important variable, it performs a <strong>binary split</strong> on that variable, which involves finding a value of the explanatory variable which, if used to split the data in 2 groups, will minimize the error of the two splits.</p>
+<p>After making the first split, it performs a new iteration on each of the splits, performing again variable selection and binary split.</p>
+<p>The tree stops growing (stops iterating) when it reaches a given stopping criteria, as for example, maximum tree depth.</p>
+<p>Let’s look into how it works, with figures.</p>
+<p><img src="https://ars.els-cdn.com/content/image/1-s2.0-S0378429021002331-gr5.jpg" class="img-fluid"> Terminology:<br>
+- <strong>Root node</strong>: node on top, with all observations (Rain_Cum)<br>
+- <strong>Internal node</strong>: all intermediate nodes (e.g., Flag_Leaf_Fungi)<br>
+- <strong>Leaf/terminal node</strong>: the bottom nodes with the boxplots</p>
+<p>scientist with engineering this platforms can creat new specificity</p>
+<p>Variables selected first (on top) are more important than variables selected afterwards. In this example, the most important variable in explaining grain yield is <strong>Rain_Cum</strong>.</p>
+</section>
+<section id="creating-partitions" class="level2">
+<h2 class="anchored" data-anchor-id="creating-partitions">Creating partitions</h2>
+<p>Let’s look into a simpler example where we are predicting y as a function of x.</p>
+<p>A simple CIT model from this relationship would be with a single break:<br>
+<img src="https://bradleyboehmke.github.io/HOML/07-decision-trees_files/figure-html/decision-stump-1.png" class="img-fluid"></p>
+<p>If we make a plot of y ~ x and show the split above along the x axis, this is how it would look like:</p>
+<p><img src="https://bradleyboehmke.github.io/HOML/07-decision-trees_files/figure-html/decision-stump-2.png" class="img-fluid"></p>
+<p>We can build a more complex tree by allowing it to be deeper:<br>
+<img src="https://bradleyboehmke.github.io/HOML/07-decision-trees_files/figure-html/depth-3-decision-tree-1.png" class="img-fluid"></p>
+<p>Which will translate into more breaks along the x-axis of the scatterplot:</p>
+<p><img src="https://bradleyboehmke.github.io/HOML/07-decision-trees_files/figure-html/depth-3-decision-tree-2.png" class="img-fluid"></p>
+<p>We can allow it to be VERY complex:<br>
+<img src="https://bradleyboehmke.github.io/HOML/07-decision-trees_files/figure-html/deep-overfit-tree-1.png" class="img-fluid"></p>
+<p>With the following scatterplot breakpoints:<br>
+<img src="https://bradleyboehmke.github.io/HOML/07-decision-trees_files/figure-html/deep-overfit-tree-2.png" class="img-fluid"></p>
+<p>So, how can we control the simplicity/complexity of the tree?</p>
+<p><strong>Training a model by fine-tuning its hyper-parameters</strong>.</p>
+<p>There will be 2 main hyperparameters that we will fine-tune:<br>
+- <strong>maximum depth</strong>: maximum (vertical) depth of the tree - <strong>minimum criterion</strong>: the value of (1 - p-value) that must be exceeded in order to implement a split</p>
+</section>
+<section id="pros-vs.-cons-of-cit" class="level2">
+<h2 class="anchored" data-anchor-id="pros-vs.-cons-of-cit">Pros vs.&nbsp;cons of CIT</h2>
+<p>Pros:<br>
+- Non-parametric<br>
+- It can model non-linear relationships<br>
+- The model created is a decision tree, very easy to interpret<br>
+- Can be used with both numerical and categorical response variables</p>
+<p>Cons:<br>
+- Can have higher bias<br>
+- Potentially lower predictive power: any observation matching a given condition will be predicted as the mean of the terminal node.</p>
+</section>
+</section>
+<section id="setup" class="level1">
+<h1>Setup</h1>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">#install.packages("partykit")</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co">#install.packages("finetune")</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co">#install.packages("bonsai")</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co">#install.packages("tidymodels")</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co">#install.packages("vip")</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidymodels)</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(vip)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(partykit)</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(finetune)</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(bonsai)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>weather <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="st">"../data/weather_monthsum.csv"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Rows: 698 Columns: 75
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr  (1): site
+dbl (74): year, strength_gtex, mean_dayl.s_Jan, mean_srad.wm2_Jan, mean_tmax...
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>weather</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 698 × 75
+    year site    strength_gtex mean_dayl.s_Jan mean_srad.wm2_Jan mean_tmax.c_Jan
+   &lt;dbl&gt; &lt;chr&gt;           &lt;dbl&gt;           &lt;dbl&gt;             &lt;dbl&gt;           &lt;dbl&gt;
+ 1  1980 Altus,…          25.3          35873.              242.            10.2
+ 2  1980 Ames P…          27.2          35743.              215.             9.2
+ 3  1980 Artesi…          26            36359               279.            13.4
+ 4  1980 Auburn…          24.8          36420.              240.            13.9
+ 5  1980 Beevil…          24.5          37494.              277             19.9
+ 6  1980 Belle …          28.1          35873.              224.             9.7
+ 7  1980 Bossie…          25.9          36451.              221.            13.2
+ 8  1980 Chicka…          25.9          35760.              244              9.5
+ 9  1980 Clarkd…          26.1          35678.              265.             5.8
+10  1980 Colleg…          27.1          36941.              254             15.8
+# ℹ 688 more rows
+# ℹ 69 more variables: mean_tmin.c_Jan &lt;dbl&gt;, mean_vp.pa_Jan &lt;dbl&gt;,
+#   sum_prcp.mm_Jan &lt;dbl&gt;, mean_dayl.s_Feb &lt;dbl&gt;, mean_srad.wm2_Feb &lt;dbl&gt;,
+#   mean_tmax.c_Feb &lt;dbl&gt;, mean_tmin.c_Feb &lt;dbl&gt;, mean_vp.pa_Feb &lt;dbl&gt;,
+#   sum_prcp.mm_Feb &lt;dbl&gt;, mean_dayl.s_Mar &lt;dbl&gt;, mean_srad.wm2_Mar &lt;dbl&gt;,
+#   mean_tmax.c_Mar &lt;dbl&gt;, mean_tmin.c_Mar &lt;dbl&gt;, mean_vp.pa_Mar &lt;dbl&gt;,
+#   sum_prcp.mm_Mar &lt;dbl&gt;, mean_dayl.s_Apr &lt;dbl&gt;, mean_srad.wm2_Apr &lt;dbl&gt;, …</code></pre>
+</div>
+</div>
+</section>
+<section id="ml-workflow" class="level1">
+<h1>ML workflow</h1>
+<p>We’re going to use the same workflow as we used for elastic net.</p>
+<section id="pre-processing" class="level2">
+<h2 class="anchored" data-anchor-id="pre-processing">1. Pre-processing</h2>
+<p>Here’s where we perform <strong>data split</strong> and <strong>data processing</strong>.</p>
+<section id="a.-data-split" class="level3">
+<h3 class="anchored" data-anchor-id="a.-data-split">a. Data split</h3>
+<p>For data split, let’s use <strong>70% training / 30% testing</strong>.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Setting seed to get reproducible results  </span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">931735</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Setting split level  </span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>weather_split <span class="ot">&lt;-</span> <span class="fu">initial_split</span>(weather, </span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>                               <span class="at">prop =</span> .<span class="dv">7</span>,</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>                               <span class="at">strata =</span> strength_gtex)</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>weather_split</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;Training/Testing/Total&gt;
+&lt;487/211/698&gt;</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Setting train set </span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>weather_train <span class="ot">&lt;-</span> <span class="fu">training</span>(weather_split)</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>weather_train</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 487 × 75
+    year site    strength_gtex mean_dayl.s_Jan mean_srad.wm2_Jan mean_tmax.c_Jan
+   &lt;dbl&gt; &lt;chr&gt;           &lt;dbl&gt;           &lt;dbl&gt;             &lt;dbl&gt;           &lt;dbl&gt;
+ 1  1980 Altus,…          25.3          35873.              242.            10.2
+ 2  1980 Ames P…          27.2          35743.              215.             9.2
+ 3  1980 Artesi…          26            36359               279.            13.4
+ 4  1980 Belle …          28.1          35873.              224.             9.7
+ 5  1980 Bossie…          25.9          36451.              221.            13.2
+ 6  1980 Chicka…          25.9          35760.              244              9.5
+ 7  1980 Clarkd…          26.1          35678.              265.             5.8
+ 8  1980 Colleg…          27.1          36941.              254             15.8
+ 9  1980 Lamesa…          26.9          36390.              272.            12.5
+10  1980 Mangum…          26.8          35808.              245.             9.6
+# ℹ 477 more rows
+# ℹ 69 more variables: mean_tmin.c_Jan &lt;dbl&gt;, mean_vp.pa_Jan &lt;dbl&gt;,
+#   sum_prcp.mm_Jan &lt;dbl&gt;, mean_dayl.s_Feb &lt;dbl&gt;, mean_srad.wm2_Feb &lt;dbl&gt;,
+#   mean_tmax.c_Feb &lt;dbl&gt;, mean_tmin.c_Feb &lt;dbl&gt;, mean_vp.pa_Feb &lt;dbl&gt;,
+#   sum_prcp.mm_Feb &lt;dbl&gt;, mean_dayl.s_Mar &lt;dbl&gt;, mean_srad.wm2_Mar &lt;dbl&gt;,
+#   mean_tmax.c_Mar &lt;dbl&gt;, mean_tmin.c_Mar &lt;dbl&gt;, mean_vp.pa_Mar &lt;dbl&gt;,
+#   sum_prcp.mm_Mar &lt;dbl&gt;, mean_dayl.s_Apr &lt;dbl&gt;, mean_srad.wm2_Apr &lt;dbl&gt;, …</code></pre>
+</div>
+</div>
+<p>How many observations?</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Setting test split</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>weather_test <span class="ot">&lt;-</span> <span class="fu">testing</span>(weather_split)</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>weather_test</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 211 × 75
+    year site    strength_gtex mean_dayl.s_Jan mean_srad.wm2_Jan mean_tmax.c_Jan
+   &lt;dbl&gt; &lt;chr&gt;           &lt;dbl&gt;           &lt;dbl&gt;             &lt;dbl&gt;           &lt;dbl&gt;
+ 1  1980 Auburn…          24.8          36420.              240.            13.9
+ 2  1980 Beevil…          24.5          37494.              277             19.9
+ 3  1980 Coolid…          32.1          36328.              268.            19.8
+ 4  1980 Floren…          26.1          36000.              228.            12.3
+ 5  1980 Jackso…          28.5          35596.              209.             8.7
+ 6  1980 Marico…          24.8          36298.              275.            19.6
+ 7  1981 Bossie…          27.6          36451.              266.            13.4
+ 8  1981 Chilli…          26.1          35984.              274.            13.5
+ 9  1981 Floren…          27.9          36000.              269.            10.5
+10  1981 Halfwa…          26.2          36000.              290.            12.4
+# ℹ 201 more rows
+# ℹ 69 more variables: mean_tmin.c_Jan &lt;dbl&gt;, mean_vp.pa_Jan &lt;dbl&gt;,
+#   sum_prcp.mm_Jan &lt;dbl&gt;, mean_dayl.s_Feb &lt;dbl&gt;, mean_srad.wm2_Feb &lt;dbl&gt;,
+#   mean_tmax.c_Feb &lt;dbl&gt;, mean_tmin.c_Feb &lt;dbl&gt;, mean_vp.pa_Feb &lt;dbl&gt;,
+#   sum_prcp.mm_Feb &lt;dbl&gt;, mean_dayl.s_Mar &lt;dbl&gt;, mean_srad.wm2_Mar &lt;dbl&gt;,
+#   mean_tmax.c_Mar &lt;dbl&gt;, mean_tmin.c_Mar &lt;dbl&gt;, mean_vp.pa_Mar &lt;dbl&gt;,
+#   sum_prcp.mm_Mar &lt;dbl&gt;, mean_dayl.s_Apr &lt;dbl&gt;, mean_srad.wm2_Apr &lt;dbl&gt;, …</code></pre>
+</div>
+</div>
+<p>How many observations?</p>
+<p>Let’s check the distribution of our predicted variable <strong>strength_gtex</strong> across training and testing:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_density</span>(<span class="at">data =</span> weather_train, </span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>               <span class="fu">aes</span>(<span class="at">x =</span> strength_gtex),</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>               <span class="at">color =</span> <span class="st">"red"</span>) <span class="sc">+</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_density</span>(<span class="at">data =</span> weather_test, </span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>               <span class="fu">aes</span>(<span class="at">x =</span> strength_gtex),</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>               <span class="at">color =</span> <span class="st">"blue"</span>) </span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="04-08_cit_partial_files/figure-html/distribution-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Now, we put our <strong>test set</strong> aside and continue with our <strong>train set</strong> for training.</p>
+</section>
+<section id="b.-data-processing" class="level3">
+<h3 class="anchored" data-anchor-id="b.-data-processing">b. Data processing</h3>
+<p>Before training, we may need to perform some processing steps, like<br>
+- normalizing<br>
+- <strong>removing unimportant variables</strong><br>
+- dropping NAs<br>
+- performing PCA on the go<br>
+- removing columns with single value<br>
+- others?</p>
+<p>For that, we’ll create a <strong>recipe</strong> of these processing steps.</p>
+<p>This recipe will then be applied now to the <strong>train data</strong>, and easily applied to the <strong>test data</strong> when we bring it back at the end.</p>
+<p>Creating a recipe is as easy way to port your processing steps for other data sets without needing to repeat code, and also only considering the data it is being applied to.</p>
+<p>You can find all available recipe step options here: https://tidymodels.github.io/recipes/reference/index.html</p>
+<p>Different model types require different processing steps.<br>
+Let’s check what steps are required for an elastic net model (linear_reg). We can search for that in this link: https://www.tmwr.org/pre-proc-table</p>
+<blockquote class="blockquote">
+<p>Differently from elastic net, variables do not need to be normalized in conditional inference tree, so we’ll skip this step</p>
+</blockquote>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>weather_recipe <span class="ot">&lt;-</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Defining predicted and predictor variables</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">recipe</span>(strength_gtex <span class="sc">~</span> .,</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>         <span class="at">data =</span> weather_train) <span class="sc">%&gt;%</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Removing year and site  </span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">step_rm</span>(year, site, <span class="fu">matches</span>(<span class="st">"Jan|Feb|Mar|Apr|Nov|Dec"</span>)) <span class="co">#%&gt;%</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Normalizing all numeric variables except predicted variable</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">#step_normalize(all_numeric(), -all_outcomes())</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>weather_recipe</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code></code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>── Recipe ──────────────────────────────────────────────────────────────────────</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code></code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>── Inputs </code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Number of variables by role</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>outcome:    1
+predictor: 74</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code></code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>── Operations </code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>• Variables removed: year, site, matches("Jan|Feb|Mar|Apr|Nov|Dec")</code></pre>
+</div>
+</div>
+<p>Now that we have our recipe ready, we <strong>need to apply it</strong> to the training data in a process called prepping:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>weather_prep <span class="ot">&lt;-</span> weather_recipe <span class="sc">%&gt;%</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">prep</span>()</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>weather_prep</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code></code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>── Recipe ──────────────────────────────────────────────────────────────────────</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code></code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>── Inputs </code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Number of variables by role</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>outcome:    1
+predictor: 74</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code></code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>── Training information </code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Training data contained 487 data points and no incomplete rows.</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code></code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>── Operations </code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>• Variables removed: year, site, mean_dayl.s_Jan, ... | Trained</code></pre>
+</div>
+</div>
+<p>Now, we’re ready to start the model training process!</p>
+</section>
+</section>
+<section id="training" class="level2">
+<h2 class="anchored" data-anchor-id="training">2. Training</h2>
+<section id="a.-model-specification" class="level3">
+<h3 class="anchored" data-anchor-id="a.-model-specification">a. Model specification</h3>
+<p>First, let’s specify:<br>
+- the <strong>type of model</strong> we want to train<br>
+- which <strong>engine</strong> we want to use<br>
+- which <strong>mode</strong> we want to use</p>
+<blockquote class="blockquote">
+<p>Elastic nets can only be run for a numerical response variable. CITs can be run with either numerical (regression) or categorical (classification) explanatory variable. Therefore, we have the need to specify the mode here.</p>
+</blockquote>
+<p>Conditional inference tree <strong>hyperparameters</strong>:<br>
+- <strong>tree_depth</strong>: maximum depth of the tree<br>
+- <strong>mincriterion</strong>: the value of 1 - p-value that must be exceeded in order to implement a split<br>
+- <strong>min_n</strong>: minimum number of data points in a node that are required for the node to be split further</p>
+<p>Let’s create a model specification that will <strong>fine-tune</strong> the first two for us.</p>
+<p>A given model type can be fit with different engines (e.g., through different packages). Here, we’ll use the <strong>partykit</strong> engine/package.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>cit_spec <span class="ot">=</span> </span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Specifying cit as our model type, asking to tune the hyperparameters</span></span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">decision_tree</span>(<span class="at">tree_depth =</span> <span class="fu">tune</span>()) <span class="sc">%&gt;%</span></span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Specify the engine</span></span>
+<span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_engine</span>(<span class="st">"partykit"</span>, </span>
+<span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a>             <span class="at">conditional_min_criterion =</span> <span class="fu">tune</span>()</span>
+<span id="cb36-8"><a href="#cb36-8" aria-hidden="true" tabindex="-1"></a>             ) <span class="sc">%&gt;%</span></span>
+<span id="cb36-9"><a href="#cb36-9" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Specifying mode  </span></span>
+<span id="cb36-10"><a href="#cb36-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_mode</span>(<span class="st">"regression"</span>)</span>
+<span id="cb36-11"><a href="#cb36-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-12"><a href="#cb36-12" aria-hidden="true" tabindex="-1"></a>cit_spec</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Decision Tree Model Specification (regression)
+
+Main Arguments:
+  tree_depth = tune()
+
+Engine-Specific Arguments:
+  conditional_min_criterion = tune()
+
+Computational engine: partykit </code></pre>
+</div>
+</div>
+<p>Notice how the main arguments above do not have a value <strong>yet</strong>, because they will be tuned.</p>
+<blockquote class="blockquote">
+<p>Notice how we have one hyperparameter at the level of decision tree (tree_depth) and another one at the level of the engine (min_criterion).</p>
+</blockquote>
+</section>
+<section id="b.-hyper-parameter-tuning" class="level3">
+<h3 class="anchored" data-anchor-id="b.-hyper-parameter-tuning">b. Hyper-parameter tuning</h3>
+<blockquote class="blockquote">
+<p>On our previous exercise, we used a fixed grid search approach. This time, let’s use an iterative search approach.</p>
+</blockquote>
+<p>For our iterative search, we need:<br>
+- Our model specification (<code>cit_spec</code>)<br>
+- The recipe (<code>weather_recipe</code>)<br>
+- Our <strong>resampling strategy</strong> (don’t have yet)<br>
+- <strong>Parameter information</strong> (don’t have yet)</p>
+<p>Let’s define our resampling strategy below, using a 10-fold cross validation approach:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">34549</span>)</span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>resampling_foldcv <span class="ot">&lt;-</span> <span class="fu">vfold_cv</span>(weather_train, </span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a>                              <span class="at">v =</span> <span class="dv">10</span>)</span>
+<span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-5"><a href="#cb38-5" aria-hidden="true" tabindex="-1"></a>resampling_foldcv</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>#  10-fold cross-validation 
+# A tibble: 10 × 2
+   splits           id    
+   &lt;list&gt;           &lt;chr&gt; 
+ 1 &lt;split [438/49]&gt; Fold01
+ 2 &lt;split [438/49]&gt; Fold02
+ 3 &lt;split [438/49]&gt; Fold03
+ 4 &lt;split [438/49]&gt; Fold04
+ 5 &lt;split [438/49]&gt; Fold05
+ 6 &lt;split [438/49]&gt; Fold06
+ 7 &lt;split [438/49]&gt; Fold07
+ 8 &lt;split [439/48]&gt; Fold08
+ 9 &lt;split [439/48]&gt; Fold09
+10 &lt;split [439/48]&gt; Fold10</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb40"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>resampling_foldcv<span class="sc">$</span>splits[[<span class="dv">1</span>]]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;Analysis/Assess/Total&gt;
+&lt;438/49/487&gt;</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb42"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>resampling_foldcv<span class="sc">$</span>splits[[<span class="dv">2</span>]]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;Analysis/Assess/Total&gt;
+&lt;438/49/487&gt;</code></pre>
+</div>
+</div>
+<p>On each fold, we’ll use <strong>438</strong> observations for training and <strong>49</strong> observations to assess performance.</p>
+<p>Now, let’s define our parameter information.</p>
+<p>We need to create this object because engine-specific hyperparameters have a missing object, and it is required to be not missing to perform simulated annealing.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb44"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>cit_param <span class="ot">=</span> cit_spec <span class="sc">%&gt;%</span></span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">extract_parameter_set_dials</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">update</span>(<span class="at">conditional_min_criterion =</span> <span class="fu">conditional_min_criterion</span>())</span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>cit_param</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Collection of 2 parameters for tuning</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code></code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>                identifier                      type    object
+                tree_depth                tree_depth nparam[+]
+ conditional_min_criterion conditional_min_criterion nparam[+]</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code></code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb49"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>cit_param<span class="sc">$</span>object</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[1]]</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Tree Depth (quantitative)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Range: [1, 15]</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+[[2]]</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Value Needed for Split (quantitative)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Transformer: prob-logis [0, 1]</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Range (transformed scale): [1.39, 15]</code></pre>
+</div>
+</div>
+<p>Now, let’s perform the search below.</p>
+<p>We will use an iterative search algorithm called <strong>simulated annealing</strong>.</p>
+<p>Here’s how it works:<br>
+<img src="https://www.tmwr.org/figures/iterative-neighborhood-1.png" class="img-fluid"> - In the example above, mixture and penalty from an elastic net model are being tuned.</p>
+<ul>
+<li><p>It finds a candidate value of hyperparameters and their associated rmse to start (iteration 1).</p></li>
+<li><p>It establishes a radius around the first proposal, and randomly chooses a new set of values within that radius.</p></li>
+<li><p>If this achieves better results than the previous parameters, it is accepted as the new best and the process continues. If the results are worse than the previous value the search procedure may still use this parameter to define further steps.</p></li>
+<li><p>After a given number of iterations, the algorithm stops and provides a list of the best models and their hyperparameters.</p></li>
+</ul>
+<p>In the algorithm below, we are asking for 50 iterations.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb57"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">76544</span>)</span>
+<span id="cb57-2"><a href="#cb57-2" aria-hidden="true" tabindex="-1"></a>cit_grid_result <span class="ot">&lt;-</span> <span class="fu">tune_sim_anneal</span>(</span>
+<span id="cb57-3"><a href="#cb57-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">object =</span> cit_spec,</span>
+<span id="cb57-4"><a href="#cb57-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">preprocessor =</span> weather_recipe,</span>
+<span id="cb57-5"><a href="#cb57-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">resamples =</span> resampling_foldcv,</span>
+<span id="cb57-6"><a href="#cb57-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">param_info =</span> cit_param,</span>
+<span id="cb57-7"><a href="#cb57-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">iter =</span> <span class="dv">50</span></span>
+<span id="cb57-8"><a href="#cb57-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Optimizing rmse</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Initial best: 3.00490</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>1 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>2 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>3 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>4 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>5 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>6 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>7 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>8 ✖ restart from best  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>9 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>10 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>11 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>12 ─ discard suboptimal rmse=3.0086 (+/-0.1361)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>13 ♥ new best           rmse=3.0034 (+/-0.1335)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>14 ─ discard suboptimal rmse=3.024 (+/-0.1437)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>15 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>16 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>17 + better suboptimal  rmse=3.0034 (+/-0.1335)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>18 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>19 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>20 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>21 ✖ restart from best  rmse=3.0034 (+/-0.1335)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>22 ◯ accept suboptimal  rmse=3.0086 (+/-0.1361)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>23 ◯ accept suboptimal  rmse=3.024 (+/-0.1437)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>24 + better suboptimal  rmse=3.0086 (+/-0.1361)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>25 ◯ accept suboptimal  rmse=3.0086 (+/-0.1361)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>26 + better suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>27 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>28 ◯ accept suboptimal  rmse=3.0086 (+/-0.1361)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>29 ✖ restart from best  rmse=3.0086 (+/-0.1361)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>30 ◯ accept suboptimal  rmse=3.0034 (+/-0.1335)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>31 ◯ accept suboptimal  rmse=3.0034 (+/-0.1335)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>32 ◯ accept suboptimal  rmse=3.0034 (+/-0.1335)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>33 ◯ accept suboptimal  rmse=3.0086 (+/-0.1361)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>34 ◯ accept suboptimal  rmse=3.0086 (+/-0.1361)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>35 ◯ accept suboptimal  rmse=3.024 (+/-0.1437)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>36 + better suboptimal  rmse=3.0086 (+/-0.1361)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>37 ✖ restart from best  rmse=3.024 (+/-0.1437)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>38 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>39 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>40 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>41 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>42 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>43 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>44 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>45 ✖ restart from best  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>46 ─ discard suboptimal rmse=3.024 (+/-0.1437)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>47 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>48 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>49 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>50 ◯ accept suboptimal  rmse=3.0049 (+/-0.133)</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb110"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb110-1"><a href="#cb110-1" aria-hidden="true" tabindex="-1"></a>cit_grid_result<span class="sc">$</span>.metrics[[<span class="dv">2</span>]]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 × 6
+  tree_depth conditional_min_criterion .metric .estimator .estimate .config     
+       &lt;int&gt;                     &lt;dbl&gt; &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt; &lt;chr&gt;       
+1          9                      1.00 rmse    standard      3.42   initial_Pre…
+2          9                      1.00 rsq     standard      0.0554 initial_Pre…</code></pre>
+</div>
+</div>
+<p>Notice how we have a column for iterations.<br>
+The first iteration uses a sensible value for the hyper-parameters, and then starts “walking” the parameter space in the direction of greatest improvement.</p>
+<p>Let’s collect a summary of metrics (across all folds, for each iteration), and plot them.</p>
+<p>Firs, RMSE (lower is better):</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb112"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb112-1"><a href="#cb112-1" aria-hidden="true" tabindex="-1"></a>cit_grid_result <span class="sc">%&gt;%</span></span>
+<span id="cb112-2"><a href="#cb112-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_metrics</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb112-3"><a href="#cb112-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(.metric <span class="sc">==</span> <span class="st">"rmse"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb112-4"><a href="#cb112-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> conditional_min_criterion, </span>
+<span id="cb112-5"><a href="#cb112-5" aria-hidden="true" tabindex="-1"></a>             <span class="at">y =</span> tree_depth </span>
+<span id="cb112-6"><a href="#cb112-6" aria-hidden="true" tabindex="-1"></a>             )) <span class="sc">+</span></span>
+<span id="cb112-7"><a href="#cb112-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_path</span>(<span class="at">group =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
+<span id="cb112-8"><a href="#cb112-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="fu">aes</span>(<span class="at">color =</span> <span class="fu">factor</span>(mean)),</span>
+<span id="cb112-9"><a href="#cb112-9" aria-hidden="true" tabindex="-1"></a>             <span class="at">size =</span> <span class="dv">3</span>) <span class="sc">+</span> </span>
+<span id="cb112-10"><a href="#cb112-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_viridis_d</span>() <span class="sc">+</span></span>
+<span id="cb112-11"><a href="#cb112-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="at">breaks =</span> <span class="fu">seq</span>(<span class="dv">1</span>,<span class="dv">15</span>,<span class="dv">2</span>)) <span class="sc">+</span></span>
+<span id="cb112-12"><a href="#cb112-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">label =</span> .iter), <span class="at">nudge_x =</span> .<span class="dv">0005</span>) <span class="sc">+</span></span>
+<span id="cb112-13"><a href="#cb112-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">"RMSE"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="04-08_cit_partial_files/figure-html/RMSE-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>What tree_depth and min criterion values created lowest RMSE?</p>
+<p>Now, let’s look into R2 (higher is better):</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb113"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb113-1"><a href="#cb113-1" aria-hidden="true" tabindex="-1"></a>cit_grid_result <span class="sc">%&gt;%</span></span>
+<span id="cb113-2"><a href="#cb113-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_metrics</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb113-3"><a href="#cb113-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(.metric <span class="sc">==</span> <span class="st">"rsq"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb113-4"><a href="#cb113-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> conditional_min_criterion, </span>
+<span id="cb113-5"><a href="#cb113-5" aria-hidden="true" tabindex="-1"></a>             <span class="at">y =</span> tree_depth </span>
+<span id="cb113-6"><a href="#cb113-6" aria-hidden="true" tabindex="-1"></a>             )) <span class="sc">+</span></span>
+<span id="cb113-7"><a href="#cb113-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_path</span>(<span class="at">group =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
+<span id="cb113-8"><a href="#cb113-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="fu">aes</span>(<span class="at">color =</span> <span class="fu">factor</span>(mean)),</span>
+<span id="cb113-9"><a href="#cb113-9" aria-hidden="true" tabindex="-1"></a>             <span class="at">size =</span> <span class="dv">3</span>) <span class="sc">+</span> </span>
+<span id="cb113-10"><a href="#cb113-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_viridis_d</span>() <span class="sc">+</span></span>
+<span id="cb113-11"><a href="#cb113-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="at">breaks =</span> <span class="fu">seq</span>(<span class="dv">1</span>,<span class="dv">15</span>,<span class="dv">2</span>)) <span class="sc">+</span></span>
+<span id="cb113-12"><a href="#cb113-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">label =</span> .iter), <span class="at">nudge_x =</span> .<span class="dv">0005</span>) <span class="sc">+</span></span>
+<span id="cb113-13"><a href="#cb113-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">"R2"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="04-08_cit_partial_files/figure-html/R2-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<blockquote class="blockquote">
+<p>Previously, we selected the single best model. Now, let’s select the best model within one std error of the metric, so we choose a model among the top ones that is more parsimonious.</p>
+</blockquote>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb114"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb114-1"><a href="#cb114-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Based on lowest RMSE</span></span>
+<span id="cb114-2"><a href="#cb114-2" aria-hidden="true" tabindex="-1"></a>best_rmse <span class="ot">&lt;-</span> cit_grid_result <span class="sc">%&gt;%</span></span>
+<span id="cb114-3"><a href="#cb114-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select_by_one_std_err</span>(<span class="st">"tree_depth"</span>,</span>
+<span id="cb114-4"><a href="#cb114-4" aria-hidden="true" tabindex="-1"></a>                        <span class="at">metic =</span> <span class="st">"rmse"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning in select_by_one_std_err(., "tree_depth", metic = "rmse"): No value of
+`metric` was given; "rmse" will be used.</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb116"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb116-1"><a href="#cb116-1" aria-hidden="true" tabindex="-1"></a>best_rmse</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 1 × 3
+  tree_depth conditional_min_criterion .config                     
+       &lt;int&gt;                     &lt;dbl&gt; &lt;chr&gt;                       
+1          9                      1.00 initial_Preprocessor1_Model1</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb118"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb118-1"><a href="#cb118-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Based on greatest R2</span></span>
+<span id="cb118-2"><a href="#cb118-2" aria-hidden="true" tabindex="-1"></a>best_r2 <span class="ot">&lt;-</span> cit_grid_result <span class="sc">%&gt;%</span></span>
+<span id="cb118-3"><a href="#cb118-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select_by_one_std_err</span>(<span class="st">"tree_depth"</span>,</span>
+<span id="cb118-4"><a href="#cb118-4" aria-hidden="true" tabindex="-1"></a>                        <span class="at">metic =</span> <span class="st">"rsq"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning in select_by_one_std_err(., "tree_depth", metic = "rsq"): No value of
+`metric` was given; "rmse" will be used.</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb120"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb120-1"><a href="#cb120-1" aria-hidden="true" tabindex="-1"></a>best_r2</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 1 × 3
+  tree_depth conditional_min_criterion .config                     
+       &lt;int&gt;                     &lt;dbl&gt; &lt;chr&gt;                       
+1          9                      1.00 initial_Preprocessor1_Model1</code></pre>
+</div>
+</div>
+<p>Based on RMSE, we would choose<br>
+- tree_depth = 9<br>
+- conditional_min_criterion = 0.999954</p>
+<p>Based on R2, we would choose<br>
+- tree_depth = 9 - conditional_min_criterion = 0.999954</p>
+<p>Let’s use the hyperparameter values that optimized R2 to fit our final model.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb122"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb122-1"><a href="#cb122-1" aria-hidden="true" tabindex="-1"></a>final_spec <span class="ot">&lt;-</span> <span class="fu">decision_tree</span>(<span class="at">tree_depth =</span> best_r2<span class="sc">$</span>tree_depth) <span class="sc">%&gt;%</span></span>
+<span id="cb122-2"><a href="#cb122-2" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Specify the engine</span></span>
+<span id="cb122-3"><a href="#cb122-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_engine</span>(<span class="st">"partykit"</span>,</span>
+<span id="cb122-4"><a href="#cb122-4" aria-hidden="true" tabindex="-1"></a>             <span class="at">conditional_min_criterion =</span> best_r2<span class="sc">$</span>conditional_min_criterion) <span class="sc">%&gt;%</span></span>
+<span id="cb122-5"><a href="#cb122-5" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Specifying mode  </span></span>
+<span id="cb122-6"><a href="#cb122-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_mode</span>(<span class="st">"regression"</span>)</span>
+<span id="cb122-7"><a href="#cb122-7" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb122-8"><a href="#cb122-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb122-9"><a href="#cb122-9" aria-hidden="true" tabindex="-1"></a>final_spec</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Decision Tree Model Specification (regression)
+
+Main Arguments:
+  tree_depth = best_r2$tree_depth
+
+Engine-Specific Arguments:
+  conditional_min_criterion = best_r2$conditional_min_criterion
+
+Computational engine: partykit </code></pre>
+</div>
+</div>
+</section>
+</section>
+<section id="validation" class="level2">
+<h2 class="anchored" data-anchor-id="validation">3. Validation</h2>
+<p>Now that we determined our best model, let’s do our <strong>last fit</strong>.</p>
+<p>This means 2 things:<br>
+- Traninig the optimum hyperparameter values on the <strong>entire training set</strong><br>
+- Using it to <strong>predict</strong> on the <strong>test set</strong></p>
+<p>These 2 steps can be completed in one function, as below:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb124"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb124-1"><a href="#cb124-1" aria-hidden="true" tabindex="-1"></a>final_fit <span class="ot">&lt;-</span> <span class="fu">last_fit</span>(final_spec,</span>
+<span id="cb124-2"><a href="#cb124-2" aria-hidden="true" tabindex="-1"></a>                weather_recipe,</span>
+<span id="cb124-3"><a href="#cb124-3" aria-hidden="true" tabindex="-1"></a>                <span class="at">split =</span> weather_split)</span>
+<span id="cb124-4"><a href="#cb124-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb124-5"><a href="#cb124-5" aria-hidden="true" tabindex="-1"></a>final_fit <span class="sc">%&gt;%</span></span>
+<span id="cb124-6"><a href="#cb124-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_predictions</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 211 × 5
+   .pred id                .row strength_gtex .config             
+   &lt;dbl&gt; &lt;chr&gt;            &lt;int&gt;         &lt;dbl&gt; &lt;chr&gt;               
+ 1  30.2 train/test split     4          24.8 Preprocessor1_Model1
+ 2  30.2 train/test split     5          24.5 Preprocessor1_Model1
+ 3  29.6 train/test split    11          32.1 Preprocessor1_Model1
+ 4  30.2 train/test split    13          26.1 Preprocessor1_Model1
+ 5  30.2 train/test split    14          28.5 Preprocessor1_Model1
+ 6  29.6 train/test split    19          24.8 Preprocessor1_Model1
+ 7  30.2 train/test split    32          27.6 Preprocessor1_Model1
+ 8  29.6 train/test split    33          26.1 Preprocessor1_Model1
+ 9  29.6 train/test split    37          27.9 Preprocessor1_Model1
+10  29.6 train/test split    38          26.2 Preprocessor1_Model1
+# ℹ 201 more rows</code></pre>
+</div>
+</div>
+<p>Metrics on the <strong>test set</strong>:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb126"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb126-1"><a href="#cb126-1" aria-hidden="true" tabindex="-1"></a>final_fit <span class="sc">%&gt;%</span></span>
+<span id="cb126-2"><a href="#cb126-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_metrics</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 × 4
+  .metric .estimator .estimate .config             
+  &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt; &lt;chr&gt;               
+1 rmse    standard      3.12   Preprocessor1_Model1
+2 rsq     standard      0.0814 Preprocessor1_Model1</code></pre>
+</div>
+</div>
+<p>Metrics on <strong>train set</strong> (for curiosity and compare to test set):</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb128"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb128-1"><a href="#cb128-1" aria-hidden="true" tabindex="-1"></a><span class="co"># RMSE</span></span>
+<span id="cb128-2"><a href="#cb128-2" aria-hidden="true" tabindex="-1"></a>final_spec <span class="sc">%&gt;%</span></span>
+<span id="cb128-3"><a href="#cb128-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fit</span>(strength_gtex <span class="sc">~</span> .,</span>
+<span id="cb128-4"><a href="#cb128-4" aria-hidden="true" tabindex="-1"></a>      <span class="at">data =</span> <span class="fu">bake</span>(weather_prep, </span>
+<span id="cb128-5"><a href="#cb128-5" aria-hidden="true" tabindex="-1"></a>                  weather_train)) <span class="sc">%&gt;%</span></span>
+<span id="cb128-6"><a href="#cb128-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">augment</span>(<span class="at">new_data =</span> <span class="fu">bake</span>(weather_prep, </span>
+<span id="cb128-7"><a href="#cb128-7" aria-hidden="true" tabindex="-1"></a>                          weather_train)) <span class="sc">%&gt;%</span> </span>
+<span id="cb128-8"><a href="#cb128-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rmse</span>(strength_gtex, .pred) <span class="sc">%&gt;%</span></span>
+<span id="cb128-9"><a href="#cb128-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_rows</span>(</span>
+<span id="cb128-10"><a href="#cb128-10" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb128-11"><a href="#cb128-11" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb128-12"><a href="#cb128-12" aria-hidden="true" tabindex="-1"></a>    <span class="co"># R2</span></span>
+<span id="cb128-13"><a href="#cb128-13" aria-hidden="true" tabindex="-1"></a>    final_spec <span class="sc">%&gt;%</span></span>
+<span id="cb128-14"><a href="#cb128-14" aria-hidden="true" tabindex="-1"></a>      <span class="fu">fit</span>(strength_gtex <span class="sc">~</span> .,</span>
+<span id="cb128-15"><a href="#cb128-15" aria-hidden="true" tabindex="-1"></a>          <span class="at">data =</span> <span class="fu">bake</span>(weather_prep, </span>
+<span id="cb128-16"><a href="#cb128-16" aria-hidden="true" tabindex="-1"></a>                      weather_train)) <span class="sc">%&gt;%</span></span>
+<span id="cb128-17"><a href="#cb128-17" aria-hidden="true" tabindex="-1"></a>      <span class="fu">augment</span>(<span class="at">new_data =</span> <span class="fu">bake</span>(weather_prep, </span>
+<span id="cb128-18"><a href="#cb128-18" aria-hidden="true" tabindex="-1"></a>                              weather_train)) <span class="sc">%&gt;%</span> </span>
+<span id="cb128-19"><a href="#cb128-19" aria-hidden="true" tabindex="-1"></a>      <span class="fu">rsq</span>(strength_gtex, .pred)</span>
+<span id="cb128-20"><a href="#cb128-20" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb128-21"><a href="#cb128-21" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 × 3
+  .metric .estimator .estimate
+  &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
+1 rmse    standard       2.86 
+2 rsq     standard       0.149</code></pre>
+</div>
+</div>
+<p>How does metrics on test compare to metrics on train?</p>
+<p>Predicted vs.&nbsp;observed plot:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb130"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb130-1"><a href="#cb130-1" aria-hidden="true" tabindex="-1"></a>final_fit <span class="sc">%&gt;%</span></span>
+<span id="cb130-2"><a href="#cb130-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect_predictions</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb130-3"><a href="#cb130-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> strength_gtex,</span>
+<span id="cb130-4"><a href="#cb130-4" aria-hidden="true" tabindex="-1"></a>             <span class="at">y =</span> .pred)) <span class="sc">+</span></span>
+<span id="cb130-5"><a href="#cb130-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>() <span class="sc">+</span></span>
+<span id="cb130-6"><a href="#cb130-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_abline</span>() <span class="sc">+</span></span>
+<span id="cb130-7"><a href="#cb130-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_smooth</span>(<span class="at">method =</span> <span class="st">"lm"</span>) <span class="sc">+</span></span>
+<span id="cb130-8"><a href="#cb130-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_continuous</span>(<span class="at">limits =</span> <span class="fu">c</span>(<span class="dv">20</span>, <span class="dv">40</span>)) <span class="sc">+</span></span>
+<span id="cb130-9"><a href="#cb130-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="at">limits =</span> <span class="fu">c</span>(<span class="dv">20</span>, <span class="dv">40</span>)) </span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>`geom_smooth()` using formula = 'y ~ x'</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: Removed 1 row containing non-finite outside the scale range
+(`stat_smooth()`).</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: Removed 1 row containing missing values or values outside the scale range
+(`geom_point()`).</code></pre>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="04-08_cit_partial_files/figure-html/unnamed-chunk-6-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Why the 4 horizontal lines?</p>
+<p>How can we get more horizontal lines in this type of algorithm?</p>
+<p>Variable importance:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb134"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb134-1"><a href="#cb134-1" aria-hidden="true" tabindex="-1"></a>final_spec <span class="sc">%&gt;%</span></span>
+<span id="cb134-2"><a href="#cb134-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fit</span>(strength_gtex <span class="sc">~</span> .,</span>
+<span id="cb134-3"><a href="#cb134-3" aria-hidden="true" tabindex="-1"></a>         <span class="at">data =</span> <span class="fu">bake</span>(weather_prep, weather)) <span class="sc">%&gt;%</span></span>
+<span id="cb134-4"><a href="#cb134-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">vi</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb134-5"><a href="#cb134-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb134-6"><a href="#cb134-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">Variable =</span> <span class="fu">fct_reorder</span>(Variable, </span>
+<span id="cb134-7"><a href="#cb134-7" aria-hidden="true" tabindex="-1"></a>                           Importance)</span>
+<span id="cb134-8"><a href="#cb134-8" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb134-9"><a href="#cb134-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> Importance, </span>
+<span id="cb134-10"><a href="#cb134-10" aria-hidden="true" tabindex="-1"></a>             <span class="at">y =</span> Variable)) <span class="sc">+</span></span>
+<span id="cb134-11"><a href="#cb134-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_col</span>() <span class="sc">+</span></span>
+<span id="cb134-12"><a href="#cb134-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_continuous</span>(<span class="at">expand =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>)) <span class="sc">+</span></span>
+<span id="cb134-13"><a href="#cb134-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">y =</span> <span class="cn">NULL</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="04-08_cit_partial_files/figure-html/unnamed-chunk-7-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Tree:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb135"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb135-1"><a href="#cb135-1" aria-hidden="true" tabindex="-1"></a>final_spec <span class="sc">%&gt;%</span></span>
+<span id="cb135-2"><a href="#cb135-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fit</span>(strength_gtex <span class="sc">~</span> .,</span>
+<span id="cb135-3"><a href="#cb135-3" aria-hidden="true" tabindex="-1"></a>      <span class="at">data =</span> <span class="fu">bake</span>(weather_prep, weather) </span>
+<span id="cb135-4"><a href="#cb135-4" aria-hidden="true" tabindex="-1"></a>        ) <span class="sc">%&gt;%</span></span>
+<span id="cb135-5"><a href="#cb135-5" aria-hidden="true" tabindex="-1"></a>  .<span class="sc">$</span>fit <span class="sc">%&gt;%</span></span>
+<span id="cb135-6"><a href="#cb135-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="04-08_cit_partial_files/figure-html/unnamed-chunk-8-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>Therefore, solar radiation in July and vapor pressure in June were the most important variables affecting cotton fiber strength.</strong></p>
+<p>Greater fiber strength was observed when solar radiation in July was &lt; 398 W/m2 and vapor pressure in June was &gt; 2130 Pa (terminal node 4).</p>
+<p>For a nicer tree visualization, check out the package <strong>ggparty</strong>:</p>
+<ul>
+<li>https://github.com/martin-borkovec/ggparty<br>
+</li>
+<li>https://jtr13.github.io/cc19/introduction-to-package-ggparty.html</li>
+</ul>
+</section>
+</section>
+<section id="summary" class="level1">
+<h1>Summary</h1>
+<p>In this exercise, we covered: - Conditional inference tree algorithm<br>
+- Set up a ML workflow to train an cit model<br>
+- Used <code>recipes</code> to process data - Used <code>rsamples</code> to split data<br>
+- Used <strong>iterative search</strong> to find the best values for mas_depth and min_criterion<br>
+- Used 10-fold cross validation as the resampling method<br>
+- Used both R2 and RMSE as the metrics to select best model<br>
+- Once final model was determined, used it to predict <strong>test set</strong><br>
+- Evaluated it with predicted vs.&nbsp;observed plot, R2 and RMSE metrics, variable importance, and tree plot</p>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const onCopySuccess = function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  }
+  const getTextToCopy = function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+    text: getTextToCopy
+  });
+  clipboard.on('success', onCopySuccess);
+  if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+    // For code content inside modals, clipBoardJS needs to be initialized with a container option
+    // TODO: Check when it could be a function (https://github.com/zenorocha/clipboard.js/issues/860)
+    const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+      text: getTextToCopy,
+      container: window.document.getElementById('quarto-embedded-source-code-modal')
+    });
+    clipboardModal.on('success', onCopySuccess);
+  }
+    var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+    var mailtoRegex = new RegExp(/^mailto:/);
+      var filterRegex = new RegExp('/' + window.location.host + '/');
+    var isInternal = (href) => {
+        return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+    }
+    // Inspect non-navigation links and adorn them if external
+ 	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+    for (var i=0; i<links.length; i++) {
+      const link = links[i];
+      if (!isInternal(link.href)) {
+        // undo the damage that might have been done by quarto-nav.js in the case of
+        // links that we want to consider external
+        if (link.dataset.originalHref !== undefined) {
+          link.href = link.dataset.originalHref;
+        }
+      }
+    }
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      if (note) {
+        return note.innerHTML;
+      } else {
+        return "";
+      }
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      // TODO in 1.5, we should make sure this works without a callout special case
+      if (note.classList.contains("callout")) {
+        return note.outerHTML;
+      } else {
+        return note.innerHTML;
+      }
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
